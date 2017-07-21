@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset=utf-8 />
+  <title>(Lab 10) Average Rental Prices</title>
+  <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.0.3/dist/leaflet.css" />
+  <link href='http://fonts.googleapis.com/css?family=Lato' rel='stylesheet' type='text/css'>
+  <link href='http://fonts.googleapis.com/css?family=Merriweather' rel='stylesheet' type='text/css'>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #fffff0;
+      font-family: Lato, sans-serif;
+      color: #0D0000;
+    }
+
+    header {
+      width: 80%;
+      margin: 10px auto 10px auto;
+    }
+
+    h1 {
+      display: inline-block;
+      margin-right: 20px;
+      font-family: Merriweather, sans-serif;
+      color: #001323;
+    }
+
+    h2 {
+      display: inline-block;
+      font-family: Merriweather, sans-serif;
+      color: #001323;
+    }
+
+    #map {
+      width: 80%;
+      height: 540px;
+      margin: 10px 10%;
+      background: #ffffff;
+      border: 2px solid #dddedf;
+    }
+
+    footer {
+      padding: 6px 10%;
+      width: 80%;
+    }
+
+    p {
+      font-size: 1em;
+      color: #001323;
+    }
+
+    .legend {
+      padding: 6px 8px;
+      font-size: 1em;
+      background: rgba(255, 255, 255, 0.8);
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+      border-radius: 5px;
+    }
+
+    .legend h3 {
+      font-size: 1.1em;
+      font-weight: bold;
+      color: #001323;
+      margin: 0 0 10px 0;
+    }
+
+    .legend span {
+      width: 20px;
+      height: 20px;
+      float: left;
+      margin: 0 10px 4px 0;
+    }
+
+    .legend label {
+      font-size: 1.1em;
+    }
+
+    .legend label:after {
+      content: '';
+      display: block;
+      clear: both;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Average Home Rental Prices</h1>
+    <h2>Averaged by County</h2>
+  </header>
+
+  <div id='map'></div>
+
+  <footer>
+    <p>Created by <a href="https://github.com/chrispappas007">Christina Pappas</a></p>
+    <p>Data produced by joining data downloaded from <a href="https://factfinder.census.gov">American FactFinder</a> with US county polygons downloaded from the <a href="https://www.census.gov/geo/maps-data/data/cbf/cbf_counties.html">US Census Cartographic Boundary Shapefiles</a>.</p>
+  </footer>
+
+
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.0.3/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/simple-statistics@4.1.0/dist/simple-statistics.min.js"></script>
+
+  <script>
+    // MAKE AN AWESOME WEB MAP! - Mischief Managed.
+    //Set intial map view
+    var options = {
+      center: [39.33, -96.84],
+      zoom: 3.8,
+      zoomSnap: .1,
+      zoomControl: false
+    };
+
+    var map = L.map('map', options);
+
+    map.addControl(L.control.zoom({
+      position: 'topright'
+    })); //add map zoom control to top right corner
+
+    //load geoJSON data using AJAX
+    $.getJSON("data/counties_median_rent_2015.json", function(data) {
+
+      console.log(data); //log data to console
+
+      var dataLayer = L.geoJSON(data, { //declare variable and assign geoJSON layer to it
+        style: function(feature) {
+          return {
+            color: '#dddddd',
+            weight: 1,
+            fillOpacity: 1,
+            fillColor: '#1f78b4'
+          } //style the map to look nice
+        },
+
+        //For each feature on the map
+        onEachFeature: function(feature, layer) {
+          //create a tooltip displaying county and ave rent
+          var tooltip = "<p><b>" + layer.feature.properties.NAME + " County</b><p>" +
+            "<p>Average Rent $" + layer.feature.properties.RENT + "</p>";
+          layer.bindTooltip(tooltip); //bind tooltip to map
+        }
+      }).addTo(map); //add to the map
+
+      drawMap(dataLayer); //call the drawMap function
+      //console.log(data);
+
+    }); //end AJAX
+
+    function drawMap(dataLayer) { //define new function to draw and classify data
+
+      var breaks = getClassBreaks(dataLayer); //declare variable and assign function that will determine range of values from datan
+
+      dataLayer.eachLayer(function(layer) {
+        layer.setStyle({
+          fillColor: getColor(+layer.feature.properties.RENT, breaks) // make sure were' comparing numbers to numbers with unary plus operator
+        }); //for each layer style the break based on the getColor function
+      });
+
+      drawLegend(breaks); //draw a legend
+
+      console.log(breaks); //log to console the break ranges
+
+    }; //end drawMap function
+
+    function getClassBreaks(dataLayer) { //define new function to create the data breaks
+      var values = []; //empty array to hold range of values
+
+      dataLayer.eachLayer(function(layer) { //loop through all feature layers using eachLayer method
+        var value = (Number(layer.feature.properties.RENT)); //select the values from the data, convert to a number
+        if (value > 0) values.push(value); //if the value is > 0 add value to value array
+      });
+
+      var clusters = ss.ckmeans(values, 5); //group data into similar clusters using ckmeans
+      var breaks = clusters.map(function(cluster) {
+        return [cluster[0], cluster.pop()]; //create an array of the lowest and highest value of each cluster
+      });
+
+      return breaks; //return the breaks
+
+    }; //end getClassBreaks function
+
+    //for each cluster, color the county that fit in that rent range
+    function getColor(d, breaks) {
+      if (d <= breaks[0][1]) {
+        return '#edf8fb';
+      } else if (d <= breaks[1][1]) {
+        return '#b3cde3';
+      } else if (d <= breaks[2][1]) {
+        return '#8c96c6';
+      } else if (d <= breaks[3][1]) {
+        return '#8856a7';
+      } else if (d <= breaks[4][1]) {
+        return '#810f7c'
+      }
+    }; //end getColor function
+
+    function drawLegend(breaks) { //define function to draw legend
+
+      var legend = L.control({ //declare variable to hold leaflet legend control object
+        position: 'topleft'
+      });
+
+      //add legend to map
+      legend.onAdd = function() {
+        //create new html div element called legend
+        var div = L.DomUtil.create('div', 'legend');
+        //style the legend heading and state legend text
+        div.innerHTML = "<h3>" + "Average Rental Price" + "</h3>";
+        //for each cluster break
+        for (var i = 0; i < breaks.length; i++) {
+          //determine the color associated and include the lower range value
+          var color = getColor(breaks[i][0], breaks);
+          //create the span tags that show the color of each cluster and the range of values; normalize the span values
+          div.innerHTML +=
+            '<span style="background:' + color + '"></span> ' +
+            '<label>$' + (breaks[i][0]).toLocaleString() + ' &mdash; ' +
+            (breaks[i][1]).toLocaleString() + '</label>';
+        }
+
+        //return the populated div to the map
+        return div;
+      };
+
+      //add the legend to the map
+      legend.addTo(map);
+
+    } //end function to draw legend
+  </script>
+
+</body>
+
+</html>
